@@ -3,6 +3,7 @@
 import re
 import sys
 from optparse import OptionParser
+import subprocess
 
 try:
     import argparse
@@ -197,7 +198,7 @@ class CompletionGenerator(object):
                 else:
                     tmp = "  \"%s%s%s\" \\" % (opt, metavar, directory_comp)
                 ret.append(tmp)
-        ret.append("  \"*::args:_files\"")
+        ret.append("  \"*:args:_files\"")
         return "\n".join(ret)
 
     def get(self):
@@ -466,24 +467,36 @@ class HelpParser(object):
 
 def main():
     """tool main"""
-    oparser = OptionParser(version=__version__,
+    oparser = ArgumentParser(version=__version__,
                            description=__doc__,
                            usage=USAGE_DOCS)
-    oparser.add_option("-f", "--output-format", dest="output_format",
+    oparser.add_argument("-f", "--output-format", dest="output_format",
                        help="output format type [zsh|bash|list] (default: zsh)")
-    (opts, args) = oparser.parse_args()
-    if sys.stdin.isatty() and len(args):
-        helptext = open(args[0]).read()
-    elif sys.stdin.isatty() and not len(args):
+    oparser.add_argument("-n", "--command-name", help='override command name')
+
+    help_text_group = oparser.add_mutually_exclusive_group()
+    help_text_group.add_argument('-c', '--command', help='command to execute to get --help')
+    help_text_group.add_argument('-t', '--help-text', dest='help_text_file',
+                                 help='file with output of --help')
+    args = oparser.parse_args()
+    if args.command is not None:
+        cmd = args.command.strip()
+        if not (cmd.endswith(' --help') or cmd.endswith(' -h')):
+            cmd += ' --help'
+        helptext = subprocess.check_output(cmd, shell=True)
+    elif args.help_text_file is not None:
+        helptext = open(args.help_text_file).read()
+    elif sys.stdin.isatty():
         oparser.print_help()
         return -1
     else:
         helptext = sys.stdin.read()
     help_parser = HelpParser(helptext)
-    command_name = help_parser.get_commandname()
+    command_name = (args.command_name if args.command_name is not None else
+                    help_parser.get_commandname())
     option_parser = help_parser.help2parseobj()
     compobj = CompletionGenerator(command_name, option_parser,
-                                  output_format=opts.output_format)
+                                  output_format=args.output_format)
     print(compobj.get())
     return 0
 
